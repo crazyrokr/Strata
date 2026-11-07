@@ -49,6 +49,12 @@ it with the ROCm runtime the Qwen Windows `rdna3` package already carries: the H
 strata-dsv41.exe --variant rdna3` (about 240 MiB, 280 files). Strata puts the package's `lib_dirs` on the engine's library path
 (`strata_control/dsv41_engine.py lib_dirs`), so the HIP runtime is found the same way the Qwen engine finds it.
 
+Linux AMD gfx1151 (Ryzen AI Max, Strix Halo): `VARIANT=halo packaging/build_dsv41_hip_linux.sh` with the same `SRC`, `LLAMA`, `HP`,
+`CORE` and `LIBW` as the other Linux AMD packages. It builds `components/dsv41/<ver>-linux-x86_64-hip-halo` for `gfx1151`: the ROCm
+runtime libraries under the package root and the gfx1151 hipBLASLt table staged by `stage_tuning.py`, the same recipe the Windows
+`rdna3` package uses. Sign the folder with `packaging/feed_tool.py sign-package` as the release step and publish it with the feed;
+the build itself does not sign or publish anything.
+
 Cross-compilation is not attempted for the desktop app. Tauri bundles are per OS, and the Windows installer is built on Windows.
 The Python contracts, the owner transport, the checks and the engine build recipes are portable.
 

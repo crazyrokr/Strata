@@ -161,8 +161,12 @@ def variant(model: str | None) -> dict | None:
 
 
 #: The AMD cards the DeepSeek engine package holds code for (packaging/build_hip_linux.sh: strata-dsv41 ships in the rx9070 build, gfx1200 and
-#: gfx1201).  setup passes the installed package's own list when it has one.
+#: gfx1201).  RDNA4 only: `_is_rdna4` and the faster-mode rule read it, so a Ryzen AI Max (gfx1151) is not mistaken for one of these cards.
 DSV41_HIP_ARCHS = ("gfx1200", "gfx1201")
+
+#: The cards the Linux DeepSeek packages cover when no package is installed: the RDNA4 ones, plus gfx1151 (Ryzen AI Max, Strix Halo) from the
+#: `halo` package.  Only `run_cards`'s no-package default reads it; an installed package passes its own manifest's list.
+DSV41_LINUX_ARCHS = DSV41_HIP_ARCHS + ("gfx1151",)
 
 
 def _on_windows() -> bool:
@@ -175,7 +179,8 @@ def run_cards(cards: list[dict] | None, vendor: str | None = None, *, windows: b
     `strata launch --plan`, setup and the app share, so the plan says what the run does.
     Every card that counts (gpu_fit.usable_cards: no integrated chip beside a card with memory of its own, no card under 8 GB).  AMD:
     on Windows one card only (several AMD cards sharing a model is Linux-only, setup.py), and only cards the engine package holds code for
-    (`covered`, default DSV41_HIP_ARCHS): a PC with an RX 9070 and an RX 7900 uses the RX 9070 and says why the other is left out.
+    (`covered`, default the Linux coverage DSV41_LINUX_ARCHS: the RDNA4 cards and gfx1151): a PC with an RX 9070 and an RX 7900 uses the
+    RX 9070 and says why the other is left out.  An installed package passes its own manifest's list instead.
     `named`: the person named these cards: they are used as named (setup warns about one the package has no code for)."""
     mine = gpu_fit.for_vendor(list(cards or []), vendor)[0] if vendor else list(cards or [])
     keep, ignored = gpu_fit.usable_cards(mine)
@@ -194,9 +199,9 @@ def run_cards(cards: list[dict] | None, vendor: str | None = None, *, windows: b
     amd = not named and bool(keep) and all(str(c.get("vendor") or vendor or "").lower() == "amd" for c in keep)
     if amd:
         win = _on_windows() if windows is None else windows
-        # the list of architectures: the package's own (`covered`), else the Linux package's (gfx1200, gfx1201).  Windows ships a different
-        # DeepSeek package (hip-rdna3), so without a list of its own nothing is filtered there.
-        archs = tuple(covered) if covered else (() if win else DSV41_HIP_ARCHS)
+        # the list of architectures: the package's own (`covered`), else the Linux packages' (gfx1200, gfx1201, gfx1151).  Windows ships a
+        # different DeepSeek package (hip-rdna3), so without a list of its own nothing is filtered there.
+        archs = tuple(covered) if covered else (() if win else DSV41_LINUX_ARCHS)
         if archs:
             known = [c for c in keep if c.get("arch")]
             ok = [c for c in keep if not c.get("arch") or c["arch"] in archs]

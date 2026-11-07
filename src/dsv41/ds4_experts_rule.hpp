@@ -115,6 +115,27 @@ inline bool store_gpu_shares_ram(bool any_integrated_device, uint64_t avail_befo
     return avail_before > avail_now && (double) (avail_before - avail_now) / 1e9 >= uma_drop_gb;
 }
 
+// #5061: an auto-sized RAM store is built only when the CPU lane keeps experts to hold.  Below `min_bytes` (1 GB) there is nothing worth an
+// arena: on a unified-memory PC every routed expert is already in the GPU's copy of the same RAM, and a token amount of lane experts is a second
+// copy that cannot pay for itself.  An explicit --ssd-cache N or DS4_STORE_GB never reaches this rule.
+inline bool cpu_lane_needs_store(double lane_bytes, double min_bytes = 1e9) {
+    return lane_bytes > 0.0 && lane_bytes >= min_bytes;
+}
+
+// #5126: layer-major pins a state per chunk and sizes the layer cache; both must fit the RAM free beside the reserve.  `avail_bytes` of ~0 is
+// "not known" (not a refusal), and the subtraction keeps `state + reserve` from wrapping.
+inline bool layer_major_state_fits(uint64_t state_bytes, uint64_t avail_bytes, uint64_t reserve_bytes) {
+    if (avail_bytes == ~uint64_t{0}) return true;
+    if (state_bytes > avail_bytes) return false;
+    return avail_bytes - state_bytes >= reserve_bytes;
+}
+
+// #5126: on a unified-memory device that already holds every routed expert (gpu_expert_share 1.0) layer-major measured no gain, so it is off by
+// default; a discrete card and a partly resident set keep it.  An explicit DS4_LAYER_MAJOR is the caller's override.
+inline bool layer_major_auto_off(bool unified_memory, double gpu_expert_share) {
+    return unified_memory && gpu_expert_share >= 1.0;
+}
+
 // The chunked prompt's attention slab (rows a pass: the dense projections q_b / wo_a / wo_b are dequantized and multiplied once a slab, so
 // a 256-row slab dequantizes them 32 times for an 8K prompt).  `base`: the 0.2.6 rule (8 MB of rows / heads width, 256 on this model).
 // DS4_ATTN_SLAB=N (`env` >= 0): 0 gives the 0.2.6 rule back, N > 0 asks for that many rows (64..chunk, a multiple of 64).  Unset (`env` < 0):

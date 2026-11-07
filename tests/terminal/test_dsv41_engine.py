@@ -356,19 +356,21 @@ class HipTwoFamilies(HipCards):
 
     def publish_both(self):
         (self.release / "dsv41").mkdir(parents=True)
-        for variant, archs in (("rx9070", ("gfx1200", "gfx1201")), ("rx7900", ("gfx1100", "gfx1101", "gfx1102"))):
+        for variant, archs in (("rx9070", ("gfx1200", "gfx1201")), ("rx7900", ("gfx1100", "gfx1101", "gfx1102")), ("halo", ("gfx1151",))):
             feed_tool.pack_engine(self.package_of(variant, archs), self.release / "dsv41", url_prefix="dsv41/")
         feed_tool.build_feed(self.release, key=self.key, sequence=1, dsv41_dir=self.release / "dsv41")
 
     def test_each_card_gets_the_package_of_its_family(self):
         self.publish_both()
-        for gfx, variant in (("gfx1100", "rx7900"), ("gfx1101", "rx7900"), ("gfx1102", "rx7900"), ("gfx1200", "rx9070"), ("gfx1201", "rx9070")):
+        for gfx, variant in (("gfx1100", "rx7900"), ("gfx1101", "rx7900"), ("gfx1102", "rx7900"), ("gfx1200", "rx9070"), ("gfx1201", "rx9070"),
+                             ("gfx1151", "halo")):
             lines = []
             dest = self.root / f"data-{gfx}"
             exe = dsv41_engine.install(dest / "engine-dsv41", self.server.url + "/strata-feed.json", hardware=self.hw([gfx]), emit=lines.append)
             self.assertIsNotNone(exe, (gfx, lines))
             self.assertTrue(exe.parent.name.endswith("-hip-" + variant), (gfx, exe))
-            self.assertEqual(dsv41_engine.package_archs(exe), {"rx7900": ("gfx1100", "gfx1101", "gfx1102"), "rx9070": ("gfx1200", "gfx1201")}[variant])
+            self.assertEqual(dsv41_engine.package_archs(exe),
+                             {"rx7900": ("gfx1100", "gfx1101", "gfx1102"), "rx9070": ("gfx1200", "gfx1201"), "halo": ("gfx1151",)}[variant])
             self.assertNotIn("recognised", " ".join(lines))
 
     def test_a_pc_with_a_card_of_each_family_gets_one_of_them_without_a_refusal(self):
@@ -391,6 +393,18 @@ class HipTwoFamilies(HipCards):
         text = " ".join(lines)
         self.assertIn("RX 7000 and RX 9000", text)
         self.assertIn("gfx1030", text)
+
+
+class CardWords(unittest.TestCase):
+    """The words a package's cards are shown in.  gfx1200/gfx1201 read exactly as before; gfx1151 (Ryzen AI Max, Strix Halo) names the Radeon
+    8060S that carries it."""
+
+    def test_the_rdna4_words_are_unchanged(self):
+        self.assertEqual(dsv41_engine.cards_words(("gfx1200", "gfx1201")), "RX 9060, RX 9070 and R9700 (gfx1200/1201)")
+
+    def test_a_gfx1151_package_names_ryzen_ai_max(self):
+        self.assertEqual(dsv41_engine.cards_words(("gfx1151",)), "Radeon 8060S (Ryzen AI Max) (gfx1151)")
+        self.assertIn("Ryzen AI Max", dsv41_engine.card_unknown_line(("gfx1151",)))
 
 
 if __name__ == "__main__":

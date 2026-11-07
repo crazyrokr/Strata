@@ -37,6 +37,7 @@
 #include "strata/dsv41/exl3_cpu.hpp"
 #include "strata/dsv41/exl3.hpp"
 #include "strata/kernels/f16_bits.hpp"
+#include "strata/core/uma_cache.hpp"
 #include "strata/dsv41/moe_win.hpp"
 #include "strata/dsv41/sampler.hpp"
 #if defined(STRATA_USE_HIP)
@@ -264,6 +265,21 @@ uint64_t ram_avail() {
         cg = sl == 0 || sl == std::string::npos ? "/" : cg.substr(0, sl);
     }
     return avail;
+}
+
+// the RAM the machine was built with: MemTotal (Linux), the commit's RAM (Windows); ~0: not known
+uint64_t ram_total() {
+#if defined(_WIN32)
+    return os::commit().ram;
+#endif
+    std::istringstream mi(read_file("/proc/meminfo"));
+    std::string k;
+    uint64_t kb = 0;
+    while (mi >> k >> kb) {
+        if (k == "MemTotal:") return kb << 10;
+        mi.ignore(64, '\n');
+    }
+    return ~uint64_t{0};
 }
 
 // the device memory the experts' placement may count on: cudaMemGetInfo's free, but on an integrated NVIDIA GPU on Linux
@@ -1232,6 +1248,13 @@ struct Model::Impl {
     bool views = true;   // false: the shards' views are dropped after the load (DS4_NO_VIEW=1)
     uint64_t warm_bytes = 0;
     static constexpr uint64_t kRamMargin = 8ull << 30;   // RAM left to the rest (the system, the page cache's churn)
+    // The RAM lm_begin keeps beside layer-major's pinned chunks and its layer cache: the desktop reserve on a unified-memory GPU (the main
+    // engine's STRATA_UMA_RESERVE_GIB rule, max(8 GiB, 8% of the installed RAM)), kRamMargin on a discrete card and when the RAM is not known.
+    uint64_t layer_major_ram_reserve() const {
+        const uint64_t total = ram_total();
+        if (devs.empty() || total == ~uint64_t{0} || !gpu_integrated(devs[0].id)) return kRamMargin;
+        return strata::core::uma_desktop_reserve_bytes(total);
+    }
     uint8_t* file_part(const Layer& l, int e) const {
         return pk.maps[(size_t) l.region_file[(size_t) e]].first + l.region_off[(size_t) e];
     }
@@ -6539,6 +6562,10 @@ struct Model::Impl {
         if (o.ssd_cache_gb < 0.0 && !std::getenv("DS4_STORE_GB")) {   // (the auto size: say when it holds less than the CPU lane's experts)
             double exp_b = 0;
             const double share = gpu_expert_share(&exp_b), lane_gb = exp_b * (1.0 - std::min(1.0, share)) / 1e9;
+            if (!strata::ds4::cpu_lane_needs_store(lane_gb * 1e9)) {
+                std::fprintf(stderr, "ds4: RAM store: all experts are on the GPU: store off (--ssd-cache N sets one)\n");
+                return;
+            }
             if (lane_gb > gb + 1.0 && o.verbose)
                 std::fprintf(stderr, "ds4: RAM store: the auto size (%.1f GB) holds less than the CPU lane's experts (%.1f GB): the hottest are kept, the "
                                      "rest is read from the SSD as the prompt picks it (--ssd-cache N sets the size)\n", gb, lane_gb);
@@ -12544,9 +12571,10 @@ struct Model::Impl {
     }
     // a run layer-major? - one device holding every layer on the flow, several chunks, and what the chunks after the
     // first would read from the files again more than the chunks' states moved to host memory and back at every layer
-    // (DS4_LAYER_MAJOR=0: never); then its host memory: the chunks' states (pinned, else pageable) and the layer cache,
-    // the largest layer's experts read from the files if RAM allows (ram_avail() less kRamMargin; DS4_LAYER_CACHE_MB
-    // sets it) - at least one expert, or not layer-major
+    // (DS4_LAYER_MAJOR=0: never; unset: off on a unified-memory device that holds every routed expert); then its host
+    // memory: the chunks' states (pinned, else pageable) and the layer cache, the largest layer's experts read from the
+    // files if RAM allows (ram_avail() less the reserve, layer_major_ram_reserve(); DS4_LAYER_CACHE_MB sets it) - the
+    // states must fit that RAM too, and at least one expert, or not layer-major
     bool lm_begin(const Run& run) {
         static const char* env = std::getenv("DS4_LAYER_MAJOR");
         if (devs.size() != 1 || run.T.size() < 2 || (env != nullptr && std::atoi(env) == 0)) return false;
@@ -12570,12 +12598,22 @@ struct Model::Impl {
         const size_t hb = chunk_hand_bytes(), state_b = run.T.size() * hb;
         const double moved = 2.0 * (double) rows * ((double) hb / (double) chunk) * (double) g.nl;
         if (need == 0 || (double) (run.T.size() - 1) * file_b <= moved) return false;
+        if (env == nullptr && strata::ds4::layer_major_auto_off(gpu_integrated(devs[0].id), gpu_expert_share())) {
+            std::fprintf(stderr, "ds4: layer-major: the GPU holds every routed expert, so it gains nothing here: off (DS4_LAYER_MAJOR=1 turns it on)\n");
+            return false;
+        }
+        const uint64_t reserve = layer_major_ram_reserve(), avail = ram_avail();
+        if (avail != ~uint64_t{0} && !strata::ds4::layer_major_state_fits(state_b, avail, reserve)) {
+            std::fprintf(stderr,
+                         "ds4: layer-major: the state of %zu chunks (%.1f GB) and the %.1f GB reserve do not fit the %.1f GB of RAM free: not "
+                         "layer-major\n", run.T.size(), (double) state_b / 1e9, (double) reserve / 1e9, (double) avail / 1e9);
+            return false;
+        }
         size_t lc_bytes = need;
         if (const char* mb = std::getenv("DS4_LAYER_CACHE_MB")) lc_bytes = std::min(need, (size_t) std::atoll(mb) << 20);
-        else {
-            const uint64_t avail = ram_avail();
-            if (avail != ~uint64_t{0})
-                lc_bytes = std::min<uint64_t>(need, avail > kRamMargin + state_b ? avail - kRamMargin - state_b : 0);
+        else if (avail != ~uint64_t{0}) {
+            const uint64_t beside = avail > state_b ? avail - state_b : 0;
+            lc_bytes = std::min<uint64_t>(need, beside > reserve ? beside - reserve : 0);
         }
         if (lc_bytes < blob_max) return false;
         void* st_p = nullptr;
