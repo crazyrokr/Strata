@@ -35,6 +35,11 @@ class StrixAsyncEnv(unittest.TestCase):
         with mock.patch.dict(os.environ, {"STRATA_DSV41_ASYNC_T": "8"}):
             self.assertEqual(setup.dsv41_config_env(HALO), {})
 
+    def test_the_linux_setup_path_writes_the_same_env_as_windows(self):
+        with mock.patch.object(os, "name", "posix"):
+            self.assertEqual(setup.dsv41_config_env(HALO), {"DS4_ASYNC_T": "4"})
+            self.assertEqual(setup.dsv41_config_env(R9700), {})
+
 
 if __name__ == "__main__":
     unittest.main()

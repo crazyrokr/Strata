@@ -41,7 +41,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/niko1221/strata
+  IMAGE: ghcr.io/crazyrokr/strata
 
 jobs:
   plan:
@@ -59,7 +59,7 @@ jobs:
           TAG: ${{ inputs.release_tag }}
         run: |
           set -eu
-          args="--release-tag $TAG --list --skip-missing"
+          args="--release-tag $TAG --list --skip-missing --repo crazyrokr/Strata"
           [ -n "$WANT" ] && args="$args --flavors $WANT"
           python3 docker/fetch-engines.py $args > list.tsv
           cat list.tsv

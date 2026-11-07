@@ -12,6 +12,9 @@ using strata::ds4::attn_slab_rows;
 using strata::ds4::staging_ring_mb;
 using strata::ds4::store_gpu_shares_ram;
 using strata::ds4::profile_size_fits;
+using strata::ds4::cpu_lane_needs_store;
+using strata::ds4::layer_major_state_fits;
+using strata::ds4::layer_major_auto_off;
 
 static int fails = 0;
 #define CHECK_EQ(a, b)                                                                              \
@@ -343,6 +346,38 @@ int main() {
         CHECK_EQ(store_gpu_shares_ram(true, 54 * G, 62 * G), 0);           // RAM grew: no
         CHECK_EQ(store_gpu_shares_ram(true, ~uint64_t{0}, 40 * G), 0);     // the first estimate unknown
         CHECK_EQ(store_gpu_shares_ram(true, 62 * G, ~uint64_t{0}), 0);
+    }
+    // #5061: an auto-sized RAM store is built only when the CPU lane keeps experts to hold (A01: under 1 GB it cannot pay for itself)
+    {
+        const double GB = 1e9;
+        CHECK_EQ(cpu_lane_needs_store(0.0), 0);              // every routed expert is on the GPU: nothing to hold
+        CHECK_EQ(cpu_lane_needs_store(0.5 * GB), 0);         // a token amount: not worth an arena
+        CHECK_EQ(cpu_lane_needs_store(GB - 1.0), 0);         // just under the 1 GB floor
+        CHECK_EQ(cpu_lane_needs_store(GB), 1);               // exactly the floor: a store pays for itself
+        CHECK_EQ(cpu_lane_needs_store(20 * GB), 1);
+        CHECK_EQ(cpu_lane_needs_store(0.5 * GB, 0.4 * GB), 1);   // an explicit floor
+        CHECK_EQ(cpu_lane_needs_store(0.3 * GB, 0.4 * GB), 0);
+        CHECK_EQ(cpu_lane_needs_store(0.0, 0.0), 0);             // a zero floor still needs experts on the lane
+    }
+    // #5126: layer-major's per-chunk state against the RAM free beside the reserve; unknown availability is not a refusal
+    {
+        const uint64_t GB = 1000000000ull, reserve = 8 * GB;
+        CHECK_EQ(layer_major_state_fits(1 * GB, 9 * GB, reserve), 1);      // exactly the reserve is left: it fits
+        CHECK_EQ(layer_major_state_fits(1 * GB, 8 * GB, reserve), 0);      // nothing beside the reserve
+        CHECK_EQ(layer_major_state_fits(9 * GB, 9 * GB, 0), 1);            // no reserve: the state alone fits
+        CHECK_EQ(layer_major_state_fits(10 * GB, 9 * GB, 0), 0);
+        CHECK_EQ(layer_major_state_fits(1 * GB, ~uint64_t{0}, reserve), 1);   // RAM not known: not a refusal
+        CHECK_EQ(layer_major_state_fits(0, 0, 0), 1);
+        CHECK_EQ(layer_major_state_fits(10, 1000000000ull, ~uint64_t{0} - 5), 0);   // a huge reserve must not wrap the sum
+    }
+    // #5126: layer-major is off by default only on a unified device that already holds every routed expert
+    {
+        CHECK_EQ(layer_major_auto_off(true, 1.0), 1);
+        CHECK_EQ(layer_major_auto_off(true, 0.9), 0);
+        CHECK_EQ(layer_major_auto_off(true, 0.999), 0);
+        CHECK_EQ(layer_major_auto_off(false, 1.0), 0);   // a discrete card that holds every expert keeps layer-major
+        CHECK_EQ(layer_major_auto_off(false, 0.0), 0);
+        CHECK_EQ(layer_major_auto_off(true, 0.0), 0);
     }
     if (fails == 0) std::printf("experts rule: all checks passed\n");
     return fails == 0 ? 0 : 1;

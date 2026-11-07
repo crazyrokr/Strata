@@ -78,7 +78,7 @@ def cards_words(archs) -> str:
     """The cards a package holds code for, in the words of the box they came in ("RX 9070 and R9700 (gfx1200/1201)")."""
     from strata_control import engine_component as ec
     archs = sorted(str(a) for a in archs or () if str(a).startswith("gfx"))
-    names = {"gfx1200": "RX 9060", "gfx1201": "RX 9070 and R9700"}
+    names = {"gfx1200": "RX 9060", "gfx1201": "RX 9070 and R9700", "gfx1151": "Radeon 8060S (Ryzen AI Max)"}
     named = [names[a] for a in archs if a in names]
     who = ", ".join(dict.fromkeys(named)) if named and len(named) == len(archs) else " and ".join(sorted({ec.hip_family(a) for a in archs})) or "other"
     short = "/".join(archs[:1] + [a[3:] for a in archs[1:]]) if archs else ""

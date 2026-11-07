@@ -39,6 +39,12 @@ class StrixChunkArgs(unittest.TestCase):
         with mock.patch.dict(os.environ, {"STRATA_DSV41_NO_BIG_CHUNK": "1"}):
             self.assertEqual(setup.dsv41_prefill_chunk_args(HALO, 63.6), [])
 
+    def test_the_linux_setup_path_writes_the_same_chunk_as_windows(self):
+        with mock.patch.object(os, "name", "posix"):
+            self.assertEqual(setup.dsv41_prefill_chunk_args(HALO, 63.6), ["--prefill-chunk", "16384"])
+            self.assertEqual(setup.dsv41_prefill_chunk_args(HALO, 31.0), ["--prefill-chunk", "8192"])
+            self.assertEqual(setup.dsv41_prefill_chunk_args(R9700, 251.0), [])
+
 
 if __name__ == "__main__":
     unittest.main()

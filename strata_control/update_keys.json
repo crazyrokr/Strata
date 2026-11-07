@@ -3,9 +3,9 @@
   "keys": [
     {
       "alg": "ed25519",
-      "key_id": "5d1bc23abbeffd0d",
-      "public": "KjnXZB0T1r3dmBNot8h+c4rTicRtllg1LH9fUlTw4ZY="
+      "key_id": "3c67d1e133b95f84",
+      "public": "9yXiKSXyaEr9ZwsmGgt5vgjYYTaVU6LSVX1ptARlkBc="
     }
   ],
-  "app_minisign_public": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI2QjA5OTk5MDU1MjFGNUUKUldSZUgxSUZtWm13dHNGRU40N2xOUjdZZGpvcGl0NTB2WGxnS3VTc2RlakpSbnBxUkxndHNFY0oK"
+  "app_minisign_public": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdEQkQ0REVCRjQ4MzQzN0MKUldSOFE0UDA2MDI5ZlFVZml4MXNDUHFJV0tKRmhaRWgyaWR3L2ptek4rSG9uVTVHcVhYVGt0eEwK"
 }

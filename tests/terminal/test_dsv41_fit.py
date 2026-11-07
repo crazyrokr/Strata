@@ -159,3 +159,43 @@ class Rdna4Faster(unittest.TestCase):
             self.assertTrue(F.rdna4_faster(self.cards(2), "IST-DAS-2.25bpw", "amd"))     # one card of the two: the single-card rule
         finally:
             F._on_windows = orig
+
+
+class LinuxCardCoverage(unittest.TestCase):
+    """The Linux DeepSeek package's default coverage: the RDNA4 archs and gfx1151 (Ryzen AI Max, Strix Halo).  The RDNA4 rule stays
+    RDNA4-only, so the shared-memory chip is not mistaken for an RDNA4 card."""
+
+    def test_the_linux_coverage_adds_gfx1151_to_the_rdna4_list(self):
+        self.assertEqual(F.DSV41_LINUX_ARCHS, F.DSV41_HIP_ARCHS + ("gfx1151",))
+        self.assertEqual(F.DSV41_HIP_ARCHS, ("gfx1200", "gfx1201"))      # the RDNA4 test's list does not move
+
+    def test_a_gfx1151_card_is_kept_by_the_linux_default(self):
+        keep, _ignored = F.run_cards(HALO, "amd", windows=False)
+        self.assertEqual([c["arch"] for c in keep], ["gfx1151"])
+
+    def test_an_rdna4_card_is_still_kept(self):
+        keep, _ignored = F.run_cards(R9700, "amd", windows=False)
+        self.assertEqual([c["arch"] for c in keep], ["gfx1201"])
+
+    def test_the_linux_default_leaves_out_another_amd_family(self):
+        halo = {"index": 0, "name": "a gfx1151 build", "vram_gb": 32.0, "vendor": "amd", "arch": "gfx1151"}
+        rx7000 = {"index": 1, "name": "Radeon RX 7900 XTX", "vram_gb": 24.0, "vendor": "amd", "arch": "gfx1100"}
+        keep, ignored = F.run_cards([halo, rx7000], "amd", windows=False)
+        self.assertEqual([c["arch"] for c in keep], ["gfx1151"])
+        self.assertIn("gfx1100", ignored[0]["why_ignored"])
+        self.assertIn("gfx1151", ignored[0]["why_ignored"])
+
+    def test_gfx1151_is_not_an_rdna4_card(self):
+        self.assertFalse(F._is_rdna4(HALO[0]))
+        self.assertTrue(F._is_rdna4({**R9700[0], "vendor": "amd"}))
+        orig = F._on_windows
+        F._on_windows = lambda: False
+        try:
+            self.assertFalse(F.rdna4_faster(HALO, "IST-DAS-2.00bpw", "amd"))   # the faster-mode rule does not reach the API chip
+            self.assertTrue(F.rdna4_faster([{**R9700[0], "vendor": "amd"}], "IST-DAS-2.00bpw", "amd"))
+        finally:
+            F._on_windows = orig
+
+
+if __name__ == "__main__":
+    unittest.main()
