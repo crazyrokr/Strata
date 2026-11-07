@@ -64,7 +64,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI2QjA5OTk5MDU1MjFGNUUKUldSZUgxSUZtWm13dHNGRU40N2xOUjdZZGpvcGl0NTB2WGxnS3VTc2RlakpSbnBxUkxndHNFY0oK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdEQkQ0REVCRjQ4MzQzN0MKUldSOFE0UDA2MDI5ZlFVZml4MXNDUHFJV0tKRmhaRWgyaWR3L2ptek4rSG9uVTVHcVhYVGt0eEwK",
       "endpoints": [
         "https://github.com/Niko1221/Strata/releases/latest/download/latest.json"
       ],
